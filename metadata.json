@@ -1,0 +1,5 @@
+{
+  "name": "PromptMind",
+  "description": "A professional AI prompt management tool designed for clarity, efficiency, and seamless organization. Features local IndexDB storage, hierarchical categorization, and AI-powered prompt refinement.",
+  "requestFramePermissions": []
+}
