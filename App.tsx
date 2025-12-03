@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { PromptList } from './components/PromptList';
 import { PromptEditor } from './components/PromptEditor';
 import { StatsDashboard } from './components/StatsDashboard';
+import { ConfirmDialog, InputDialog } from './components/Dialogs';
 import { Prompt, Category, Toast } from './types';
 import { db } from './services/db';
 import { v4 as uuidv4 } from 'uuid';
@@ -18,6 +19,21 @@ const App = () => {
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+
+  // Dialog States
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    isDestructive?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [inputConfig, setInputConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    parentId: string | null;
+  } | null>(null);
 
   // Initialize Data
   useEffect(() => {
@@ -42,38 +58,51 @@ const App = () => {
 
   // --- Actions ---
 
-  const handleAddCategory = async (parentId: string | null) => {
-    const name = prompt("Enter category name:");
-    if (name) {
-      const newCat: Category = {
-        id: uuidv4(),
-        name,
-        parentId,
-        icon: 'folder',
-        color: 'gray'
-      };
-      await db.saveCategory(newCat);
-      await refreshData();
-      showToast('Category created');
+  const handleAddCategory = (parentId: string | null) => {
+    setInputConfig({
+        isOpen: true,
+        title: parentId ? 'New Subcategory' : 'New Category',
+        parentId
+    });
+  };
+
+  const onAddCategoryConfirm = async (name: string) => {
+    if (inputConfig) {
+        const { parentId } = inputConfig;
+        const newCat: Category = {
+            id: uuidv4(),
+            name,
+            parentId,
+            icon: 'folder',
+            color: 'gray'
+        };
+        await db.saveCategory(newCat);
+        await refreshData();
+        showToast('Category created');
+        setInputConfig(null);
     }
   };
 
-  const handleDeleteCategory = async (id: string) => {
-    if (confirm("Delete this category? Prompts inside will be uncategorized.")) {
-        // Logic to update child prompts could go here, for now just delete cat
-        await db.deleteCategory(id);
-        
-        // Uncategorize prompts in this category
-        const promptsInCat = prompts.filter(p => p.categoryId === id);
-        for(const p of promptsInCat) {
-            await db.savePrompt({ ...p, categoryId: null });
+  const handleDeleteCategory = (id: string) => {
+    setConfirmConfig({
+        isOpen: true,
+        title: 'Delete Category',
+        message: 'Are you sure you want to delete this category? Any prompts inside will be moved to Uncategorized.',
+        isDestructive: true,
+        onConfirm: async () => {
+            await db.deleteCategory(id);
+            // Uncategorize prompts in this category
+            const promptsInCat = prompts.filter(p => p.categoryId === id);
+            for(const p of promptsInCat) {
+                await db.savePrompt({ ...p, categoryId: null });
+            }
+            await refreshData();
+            if (selectedFilter === id) setSelectedFilter('all');
+            showToast('Category deleted');
+            setConfirmConfig(null);
         }
-
-        await refreshData();
-        if (selectedFilter === id) setSelectedFilter('all');
-        showToast('Category deleted');
-    }
-  }
+    });
+  };
 
   const handleSavePrompt = async (data: Partial<Prompt>) => {
     const now = Date.now();
@@ -94,12 +123,19 @@ const App = () => {
     showToast(data.id ? 'Prompt updated' : 'Prompt created');
   };
 
-  const handleDeletePrompt = async (id: string) => {
-    if (confirm("Are you sure you want to delete this prompt?")) {
-      await db.deletePrompt(id);
-      await refreshData();
-      showToast('Prompt deleted');
-    }
+  const handleDeletePrompt = (id: string) => {
+    setConfirmConfig({
+        isOpen: true,
+        title: 'Delete Prompt',
+        message: 'Are you sure you want to delete this prompt? This action cannot be undone.',
+        isDestructive: true,
+        onConfirm: async () => {
+            await db.deletePrompt(id);
+            await refreshData();
+            showToast('Prompt deleted');
+            setConfirmConfig(null);
+        }
+    });
   };
 
   const handleToggleFav = async (prompt: Prompt) => {
@@ -220,6 +256,25 @@ const App = () => {
         categories={categories}
         initialData={editingPrompt}
         currentCategoryId={selectedFilter === 'stats' ? null : selectedFilter}
+      />
+
+      <ConfirmDialog 
+        isOpen={!!confirmConfig}
+        title={confirmConfig?.title || ''}
+        message={confirmConfig?.message || ''}
+        isDestructive={confirmConfig?.isDestructive}
+        onConfirm={confirmConfig?.onConfirm || (() => {})}
+        onCancel={() => setConfirmConfig(null)}
+        confirmLabel="Delete"
+      />
+
+      <InputDialog 
+        isOpen={!!inputConfig}
+        title={inputConfig?.title || ''}
+        onConfirm={onAddCategoryConfirm}
+        onCancel={() => setInputConfig(null)}
+        placeholder="Enter category name..."
+        confirmLabel="Create"
       />
 
       {/* Toast Notification */}
